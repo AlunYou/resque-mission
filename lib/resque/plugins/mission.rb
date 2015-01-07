@@ -56,7 +56,7 @@ module Resque
       # status - Optional Mission::Progress object
       # block - if given, will yield idx, total, status message to the block
       #         before performing the step
-      def call(status=nil, &block)
+      def call(status=nil, callbacks=nil)
         @progress = status || Progress.new
         start_timer
         self.class.steps.each_with_index do |step, index|
@@ -64,7 +64,11 @@ module Resque
           next if progress.completed?(method_name.to_s)
           progress.start method_name.to_s
           name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
-          yield index, self.class.steps.length, name if block_given?
+
+          if(callbacks && callbacks[:at])
+            callbacks[:at].call(index, self.class.steps.length, name)
+          end
+          send 'set_status_procs', callbacks[:get_status], callbacks[:set_status]
           send method_name
         end
         progress.finish
@@ -103,8 +107,22 @@ module Resque
         def perform
           task = self.class::TASK_CLASS.create_from_options(@options['args'])
           @options['progress'] = Progress[@options['progress'] || {}]
-          task.call(@options['progress']) {|idx,total,msg| at idx, total, msg }
+
+          callbacks = {}
+          callbacks[:at] = Proc.new do |idx,total,msg|
+            at idx, total, msg
+          end
+          callbacks[:set_status] = Proc.new do |key, value|
+            self.status = [status, {key  => value}].flatten
+          end
+          callbacks[:get_status] = Proc.new do |key|
+            status[key]
+          end
+          task.call(@options['progress'], callbacks)
           completed
+        rescue => e
+          Rails.logger.error "resque-mission:perform error: #{e} callstack:#{e.backtrace}"
+          raise e
         end
 
         # Internal: used by Resque::JobWithStatus to handle failure
