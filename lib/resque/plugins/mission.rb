@@ -63,13 +63,24 @@ module Resque
           method_name, options = step
           next if progress.completed?(method_name.to_s)
           progress.start method_name.to_s
-          name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
 
-          if(callbacks && callbacks[:at])
-            callbacks[:at].call(index, self.class.steps.length, name)
+          begin
+            name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
+
+            if(callbacks && callbacks[:at])
+              callbacks[:at].call(index, self.class.steps.length, name)
+            end
+            send 'set_status_procs', callbacks[:get_status], callbacks[:set_status]
+            send method_name
+          rescue => e
+            #if exception, need to clear working status and push this to redis
+            progress.stop_working
+            if(callbacks && callbacks[:at])
+              callbacks[:at].call(index, self.class.steps.length, name)
+            end
+            raise e
           end
-          send 'set_status_procs', callbacks[:get_status], callbacks[:set_status]
-          send method_name
+
         end
         progress.finish
       rescue Object => e
@@ -153,6 +164,10 @@ module Resque
         def start(step)
           completed.push delete('working') if working
           self['working'] = step
+        end
+
+        def stop_working
+          delete('working') if working
         end
 
         def working
