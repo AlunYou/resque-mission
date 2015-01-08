@@ -118,9 +118,13 @@ module Resque
         end
 
         #add this method because resque-scheduler needs a four-param method
-        def self.enqueue_to(queue, klass, uuid, options)
-          Resque.enqueue_to(queue, klass, uuid, options)
-          uuid
+
+        # Wrapper API to forward a Resque::Job creation API call into a Resque::Plugins::Status call.
+        # This is needed to be used with resque scheduler
+        # http://github.com/bvandenbos/resque-scheduler
+        def self.scheduled(queue, klass, *args)
+          Resque.enqueue_to(queue, klass, *args)
+          uuid = args[0]
         end
 
         def safe_perform!
