@@ -68,7 +68,7 @@ module Resque
             name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
 
             if(callbacks && callbacks[:at])
-              callbacks[:at].call(index, self.class.steps.length, name)
+              callbacks[:at].call(index, self.class.steps.length, name, progress:progress)
             end
             send 'set_status_procs', callbacks[:get_status], callbacks[:set_status]
             send method_name
@@ -76,13 +76,16 @@ module Resque
             #if exception, need to clear working status and push this to redis
             progress.stop_working
             if(callbacks && callbacks[:at])
-              callbacks[:at].call(index, self.class.steps.length, name)
+              callbacks[:at].call(index, self.class.steps.length, name, progress:progress)
             end
             raise e
           end
 
         end
         progress.finish
+        if(callbacks && callbacks[:at])
+          callbacks[:at].call(self.class.steps.length, self.class.steps.length, 'all-done', progress:progress)
+        end
       rescue Object => e
         progress.failures += 1
         raise e
@@ -114,14 +117,27 @@ module Resque
           self::TASK_CLASS.queue
         end
 
+        #add this method because resque-scheduler needs a four-param method
+        def self.enqueue_to(queue, klass, uuid, options)
+          Resque.enqueue_to(queue, klass, uuid, options)
+          uuid
+        end
+
+        def safe_perform!
+          #now get job progress from status key.
+          @last_progress = Progress[status['progress'] || {}]
+          super
+        end
+
         # Internal: called by Resque::JobWithStatus to perform the job
         def perform
           task = self.class::TASK_CLASS.create_from_options(@options['args'])
-          @options['progress'] = Progress[@options['progress'] || {}]
+          @options['progress'] = @last_progress
+          #@options['progress'] = Progress[@options['progress'] || {}]
 
           callbacks = {}
-          callbacks[:at] = Proc.new do |idx,total,msg|
-            at idx, total, msg
+          callbacks[:at] = Proc.new do |idx,total,*msg|
+            at idx, total, *msg
           end
           callbacks[:set_status] = Proc.new do |key, value|
             self.status = [status, {key  => value}].flatten
@@ -140,7 +156,7 @@ module Resque
         # Stores the progress object on the exception so we can pass it through
         # to the resque callback and store it in the failure.
         def on_failure(e)
-          e.instance_variable_set :@job_progress, @options['progress']
+          #e.instance_variable_set :@job_progress, @options['progress']
           raise e
         end
 
@@ -148,7 +164,9 @@ module Resque
         # Takes our progress object and injects it back into the arguments hash
         # so that when the job is retried it knows where to resume.
         def self.on_failure_1111_store_progress(e, *args)
-          args.last['progress'] = e.instance_variable_get :@job_progress
+          #set this will change job args, so this will be a different job in resque-retry, because it uses class+arg to gen the signiture
+          #args.last['progress'] = e.instance_variable_get :@job_progress
+          args.last.delete('progress')
         end
       end
 
