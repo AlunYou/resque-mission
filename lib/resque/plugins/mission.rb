@@ -129,7 +129,10 @@ module Resque
 
         def safe_perform!
           #now get job progress from status key.
-          @last_progress = Progress[status['progress'] || {}]
+          @last_progress = Progress[{}]
+          if(status && status['progress'])
+            @last_progress = Progress[status['progress']]
+          end
           super
         end
 
