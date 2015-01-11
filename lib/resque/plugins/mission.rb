@@ -59,7 +59,11 @@ module Resque
       def call(status=nil, callbacks=nil)
         @progress = status || Progress.new
         start_timer
-        self.class.steps.each_with_index do |step, index|
+        steps = @steps
+        if(steps.nil? || steps.size <= 0)
+          steps = self.class.steps
+        end
+        steps.each_with_index do |step, index|
           method_name, options = step
           next if progress.completed?(method_name.to_s)
           progress.start method_name.to_s
@@ -68,7 +72,7 @@ module Resque
             name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
 
             if(callbacks && callbacks[:at])
-              callbacks[:at].call(index, self.class.steps.length, name, progress:progress)
+              callbacks[:at].call(index, steps.length, name, progress:progress)
             end
             send 'set_status_procs', callbacks[:get_status], callbacks[:set_status]
             send method_name
@@ -76,7 +80,7 @@ module Resque
             #if exception, need to clear working status and push this to redis
             progress.stop_working
             if(callbacks && callbacks[:at])
-              callbacks[:at].call(index, self.class.steps.length, name, progress:progress)
+              callbacks[:at].call(index, steps.length, name, progress:progress)
             end
             raise e
           end
@@ -84,7 +88,7 @@ module Resque
         end
         progress.finish
         if(callbacks && callbacks[:at])
-          callbacks[:at].call(self.class.steps.length, self.class.steps.length, 'all-done', progress:progress)
+          callbacks[:at].call(steps.length, steps.length, 'all-done', progress:progress)
         end
       rescue Object => e
         progress.failures += 1
