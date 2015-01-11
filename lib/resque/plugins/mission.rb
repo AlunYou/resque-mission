@@ -69,7 +69,8 @@ module Resque
           progress.start method_name.to_s
 
           begin
-            name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
+            #name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
+            name = (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
 
             if(callbacks && callbacks[:at])
               callbacks[:at].call(index, steps.length, name, progress:progress)
