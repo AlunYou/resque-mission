@@ -72,6 +72,10 @@ module Resque
             #name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
             name = (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
 
+            Rails.logger.info ""
+            Rails.logger.info ""
+            Rails.logger.info "start step #{index}: #{name}"
+
             if(callbacks && callbacks[:at])
               callbacks[:at].call(index, steps.length, name, progress:progress)
             end
@@ -128,6 +132,9 @@ module Resque
         # This is needed to be used with resque scheduler
         # http://github.com/bvandenbos/resque-scheduler
         def self.scheduled(queue, klass, *args)
+          Rails.logger.info ""
+          Rails.logger.info ""
+          Rails.logger.info "This is a retry job: #{klass}, #{args[0]}"
           Resque.enqueue_to(queue, klass, *args)
           uuid = args[0]
         end
@@ -143,6 +150,10 @@ module Resque
 
         # Internal: called by Resque::JobWithStatus to perform the job
         def perform
+          Rails.logger.info ""
+          Rails.logger.info ""
+          Rails.logger.info "start perform job: #{@options['args']}, #{@last_progress}"
+
           task = self.class::TASK_CLASS.create_from_options(@options['args'])
           @options['progress'] = @last_progress
           #@options['progress'] = Progress[@options['progress'] || {}]
@@ -159,6 +170,10 @@ module Resque
           end
           task.call(@options['progress'], callbacks)
           completed
+
+          Rails.logger.info "end perform job: "
+          Rails.logger.info ""
+          Rails.logger.info ""
         rescue => e
           Rails.logger.error "resque-mission:perform error: #{e} callstack:#{e.backtrace}"
           raise e
