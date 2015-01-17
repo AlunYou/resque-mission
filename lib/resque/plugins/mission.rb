@@ -60,32 +60,40 @@ module Resque
         @progress = status || Progress.new
         start_timer
         steps = @steps
+        if(self.respond_to? :before_mission)
+          self.send :before_mission, steps, @progress
+        end
         if(steps.nil? || steps.size <= 0)
           steps = self.class.steps
         end
         steps.each_with_index do |step, index|
-          method_name, options = step
-          next if progress.completed?(method_name.to_s)
-          progress.start method_name.to_s
+          method_name = step
+          name = method_name.to_s
+          next if progress.completed?(name)
+          progress.start name
 
           begin
-            #name = options[:message] || (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
-            name = (method_name.to_s.gsub(/\w+/) {|word| word.capitalize})
-
-            Rails.logger.info ""
-            Rails.logger.info ""
-            Rails.logger.info "start step #{index}: #{name}"
+            if(self.respond_to? :before_step)
+              self.send :before_step, name, index
+            end
 
             if(callbacks && callbacks[:at])
               callbacks[:at].call(index, steps.length, name, progress:progress)
             end
             send 'set_status_procs', callbacks[:get_status], callbacks[:set_status]
             send method_name
+
+            if(self.respond_to? :after_step)
+              self.send :after_step, name, index
+            end
           rescue => e
             #if exception, need to clear working status and push this to redis
             progress.stop_working
             if(callbacks && callbacks[:at])
               callbacks[:at].call(index, steps.length, name, progress:progress)
+            end
+            if(self.respond_to? :step_error)
+              self.send :step_error, name, index, e
             end
             raise e
           end
@@ -95,8 +103,14 @@ module Resque
         if(callbacks && callbacks[:at])
           callbacks[:at].call(steps.length, steps.length, 'all-done', progress:progress)
         end
+        if(self.respond_to? :after_mission)
+          self.send :after_mission
+        end
       rescue Object => e
         progress.failures += 1
+        if(self.respond_to? :mission_error)
+          self.send :mission_error, e
+        end
         raise e
       end
 
@@ -133,8 +147,7 @@ module Resque
         # http://github.com/bvandenbos/resque-scheduler
         def self.scheduled(queue, klass, *args)
           Rails.logger.info ""
-          Rails.logger.info ""
-          Rails.logger.info "This is a retry job: #{klass}, #{args[0]}"
+          Rails.logger.info "This is a retry job: #{klass}, #{args}"
           Resque.enqueue_to(queue, klass, *args)
           uuid = args[0]
         end
@@ -150,13 +163,8 @@ module Resque
 
         # Internal: called by Resque::JobWithStatus to perform the job
         def perform
-          Rails.logger.info ""
-          Rails.logger.info ""
-          Rails.logger.info "start perform job: #{@options['args']}, #{@last_progress}"
-
           task = self.class::TASK_CLASS.create_from_options(@options['args'])
           @options['progress'] = @last_progress
-          #@options['progress'] = Progress[@options['progress'] || {}]
 
           callbacks = {}
           callbacks[:at] = Proc.new do |idx,total,*msg|
@@ -170,10 +178,6 @@ module Resque
           end
           task.call(@options['progress'], callbacks)
           completed
-
-          Rails.logger.info "end perform job: "
-          Rails.logger.info ""
-          Rails.logger.info ""
         rescue => e
           Rails.logger.error "resque-mission:perform error: #{e} callstack:#{e.backtrace}"
           raise e
