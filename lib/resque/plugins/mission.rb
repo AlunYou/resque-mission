@@ -67,7 +67,7 @@ module Resque
           self.send :before_mission, steps, @progress
         end
         steps.each_with_index do |step, index|
-          method_name = step
+          method_name, options = step
           name = method_name.to_s
           next if progress.completed?(name)
           progress.start name
