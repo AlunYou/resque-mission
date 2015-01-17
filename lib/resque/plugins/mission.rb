@@ -60,11 +60,11 @@ module Resque
         @progress = status || Progress.new
         start_timer
         steps = @steps
-        if(self.respond_to? :before_mission)
-          self.send :before_mission, steps, @progress
-        end
         if(steps.nil? || steps.size <= 0)
           steps = self.class.steps
+        end
+        if(self.respond_to? :before_mission)
+          self.send :before_mission, steps, @progress
         end
         steps.each_with_index do |step, index|
           method_name = step
