@@ -146,14 +146,18 @@ module Resque
         # This is needed to be used with resque scheduler
         # http://github.com/bvandenbos/resque-scheduler
         def self.scheduled(queue, klass, *args)
-          job_status_id, job_args = args
-          job_args = job_args['args']
-          mission_id = job_args['mission_id']
-          mission_key = "mission:#{mission_id}"
-          Rails.cache.increment(mission_key, 1)
+          begin
+            job_status_id, job_args = args
+            job_args = job_args['args']
+            mission_id = job_args['mission_id']
+            mission_key = "mission:#{mission_id}"
+            already_retry_num = Rails.cache.increment(mission_key, 1)
 
-          already_retry_num = Rails.cache.increment(mission_key, 0)
-          Rails.logger.info "\nThis is #{already_retry_num}th retry job: mission_key=#{mission_key}, #{klass}, #{args.to_s}"
+            #already_retry_num = Rails.cache.increment(mission_key, 0)
+            Rails.logger.info "\nThis is #{already_retry_num}th retry job: mission_key=#{mission_key}, #{klass}, #{args.to_s}"
+          rescue => e
+            Rails.logger.error "resque-mission:scheduled error: #{e}, #{e.message}, callstack:#{e.backtrace}"
+          end
 
           Resque.enqueue_to(queue, klass, *args)
           uuid = args[0]
@@ -186,7 +190,7 @@ module Resque
           task.call(@options['progress'], callbacks)
           completed
         rescue => e
-          Rails.logger.error "resque-mission:perform error: #{e} callstack:#{e.backtrace}"
+          Rails.logger.error "resque-mission:perform error: #{e}, #{e.message}, callstack:#{e.backtrace}"
           raise e
         end
 
