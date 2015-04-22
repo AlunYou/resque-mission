@@ -146,20 +146,24 @@ module Resque
         # This is needed to be used with resque scheduler
         # http://github.com/bvandenbos/resque-scheduler
         def self.scheduled(queue, klass, *args)
-          begin
-            job_status_id, job_args = args
-            job_args = job_args['args']
-            mission_id = job_args['mission_id']
-            mission_key = "mission:#{mission_id}"
-            already_retry_num = Rails.cache.increment(mission_key, 1)
+          job_status_id, job_args = args
+          job_args = job_args['args']
+          mission_id = job_args['mission_id']
 
-            #already_retry_num = Rails.cache.increment(mission_key, 0)
-            Rails.logger.info "\nThis is #{already_retry_num}th retry job: mission_key=#{mission_key}, #{klass}, #{args.to_s}"
+          Resque.enqueue_to(queue, klass, *args)
+
+          begin
+            mission = ::Mission.find(mission_id)
+            if(mission.can_be_enqueued?)
+              mission.enqueue
+              Rails.logger.info "\nThis is #{mission.retry_times}th retry job: #{klass}, #{args.to_s}"
+            else
+              Rails.logger.error "\nCan not set job status to enqueued: #{klass}, #{args.to_s}}"
+            end
           rescue => e
             Rails.logger.error "resque-mission:scheduled error: #{e}, #{e.message}, callstack:#{e.backtrace}"
           end
 
-          Resque.enqueue_to(queue, klass, *args)
           uuid = args[0]
         end
 
